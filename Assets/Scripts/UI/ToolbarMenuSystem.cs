@@ -171,6 +171,9 @@ namespace MetroSim
                     new MenuItem("Quick Save",   "game_quicksave",isGame: true),
                     new MenuItem("Save As...",   "game_saveas",   isGame: true),
                     new MenuItem("Load...",      "game_load",     isGame: true),
+                    new MenuItem("─────────────", null),
+                    new MenuItem("Save & Exit",  "game_save_exit",isGame: true),
+                    new MenuItem("Exit",         "game_exit",     isGame: true),
                 }),
             };
         }
@@ -513,6 +516,13 @@ namespace MetroSim
                     break;
                 case "game_load":
                     SaveLoadDialog.Instance?.ShowLoad();
+                    break;
+                case "game_save_exit":
+                    GameManager.Instance?.SaveLoad?.QuickSave();
+                    Application.Quit();
+                    break;
+                case "game_exit":
+                    Application.Quit();
                     break;
             }
         }
