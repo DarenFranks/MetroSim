@@ -98,9 +98,10 @@ namespace MetroSim
 
             BuildToolbar();
 
-            // Hide old left-panel tool buttons (replaced by this toolbar)
-            var leftPanel = GameObject.Find("LeftPanel");
-            if (leftPanel != null) leftPanel.SetActive(false);
+            // Hide legacy panels replaced by this toolbar
+            GameObject.Find("LeftPanel")     ?.SetActive(false);
+            // Hide only the overlay button group; keep StatsPanel / TileInfoPanel
+            GameObject.Find("OverlayButtons")?.SetActive(false);
         }
 
         private void DefineMenus()
@@ -331,7 +332,9 @@ namespace MetroSim
             int seps = 0;
             foreach (var m in items) { if (m.key == null) seps++; else realItems++; }
 
-            float panelH = realItems * ITEM_H + seps * 6f + 4f;
+            // spacing=1 between each child, padding top+bottom=6, sep height=5
+            float panelH = realItems * ITEM_H + seps * 5f
+                           + Mathf.Max(0, realItems + seps - 1) * 1f + 10f;
 
             var panel = new GameObject($"Drop_{cat}");
             panel.transform.SetParent(_canvas.transform, false);
@@ -346,8 +349,8 @@ namespace MetroSim
             var vl = panel.AddComponent<VerticalLayoutGroup>();
             vl.padding = new RectOffset(3, 3, 3, 3);
             vl.spacing = 1;
-            vl.childControlWidth    = true;
-            vl.childControlHeight   = false;
+            vl.childControlWidth     = true;
+            vl.childControlHeight    = true;   // uses preferredHeight on each child
             vl.childForceExpandWidth = true;
 
             foreach (var item in items)
@@ -360,6 +363,7 @@ namespace MetroSim
                     sep.AddComponent<Image>().color = SEP_COLOR;
                     var le2 = sep.AddComponent<LayoutElement>();
                     le2.preferredHeight = 5;
+                    le2.minHeight       = 5;
                     continue;
                 }
 
