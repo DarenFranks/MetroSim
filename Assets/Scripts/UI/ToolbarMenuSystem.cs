@@ -97,6 +97,10 @@ namespace MetroSim
             if (_canvas == null) return;
 
             BuildToolbar();
+
+            // Hide old left-panel tool buttons (replaced by this toolbar)
+            var leftPanel = GameObject.Find("LeftPanel");
+            if (leftPanel != null) leftPanel.SetActive(false);
         }
 
         private void DefineMenus()
@@ -431,19 +435,31 @@ namespace MetroSim
             var triggerRT = trigger.GetComponent<RectTransform>();
             var panelRT   = panel.GetComponent<RectTransform>();
 
-            // Get trigger's bottom-left corner in screen space
+            // Get button's bottom-left corner
             var corners = new Vector3[4];
             triggerRT.GetWorldCorners(corners);
-            // corners[0] = bottom-left, corners[1] = top-left
+            Camera cam = _canvas.renderMode == RenderMode.ScreenSpaceOverlay
+                ? null : _canvas.worldCamera;
 
-            Vector2 screenBL = RectTransformUtility.WorldToScreenPoint(_canvas.worldCamera, corners[0]);
+            Vector2 screenBL = RectTransformUtility.WorldToScreenPoint(cam, corners[0]);
 
+            // ScreenPointToLocalPointInRectangle returns canvas-local coords
+            // where (0,0) = canvas CENTER.
+            // Panel anchor is (0,0) = canvas BOTTOM-LEFT.
+            // anchoredPosition = localPos - anchorInLocalSpace
+            //                  = localPos - (-halfW, -halfH)
+            //                  = localPos + (halfW, halfH)
             Vector2 localBL;
             RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                canvasRT, screenBL, _canvas.worldCamera, out localBL);
+                canvasRT, screenBL, cam, out localBL);
 
-            // Anchor bottom-left of panel to above the toolbar
-            panelRT.anchoredPosition = new Vector2(localBL.x, TOOLBAR_H);
+            Vector2 halfSize = canvasRT.rect.size * 0.5f;
+            float xPos = localBL.x + halfSize.x;
+
+            // Clamp so the panel doesn't run past the right edge
+            xPos = Mathf.Clamp(xPos, 0f, canvasRT.rect.width - panelRT.sizeDelta.x);
+
+            panelRT.anchoredPosition = new Vector2(xPos, TOOLBAR_H);
         }
 
         private void CloseAll()
