@@ -260,8 +260,8 @@ namespace MetroSim
 
         // ── Save / Load / New callbacks ───────────────────────────────────────
 
-        public void OnSaveClicked()  => GameManager.Instance?.SaveLoad?.Save();
-        public void OnLoadClicked()  => GameManager.Instance?.SaveLoad?.Load();
+        public void OnSaveClicked()  => SaveLoadDialog.Instance?.ShowSave();
+        public void OnLoadClicked()  => SaveLoadDialog.Instance?.ShowLoad();
         public void OnNewClicked()   => GameManager.Instance?.NewCity(0);
 
         // ── Private ───────────────────────────────────────────────────────────

@@ -14,7 +14,8 @@
 //   }
 //
 // Save files live in Application.persistentDataPath/Cities/
-// The save/load slot is "autosave.json" unless changed.
+// Multiple named save slots are supported.
+// "AutoSave" slot is written automatically on application quit.
 // =============================================================================
 using System;
 using System.IO;
@@ -25,14 +26,46 @@ namespace MetroSim
 {
     public class SaveLoadSystem : MonoBehaviour
     {
-        public string SaveFileName = "autosave.json";
+        // ── Save info (public so dialogs can read it) ─────────────────────────
+
+        public struct SaveInfo
+        {
+            public string name;
+            public string displayDate;
+            public DateTime lastWrite;
+        }
+
+        // ── State ─────────────────────────────────────────────────────────────
+
+        public string LastUsedSlot { get; private set; } = "QuickSave";
 
         private string SaveDir => Path.Combine(Application.persistentDataPath, "Cities");
-        private string SavePath => Path.Combine(SaveDir, SaveFileName);
+
+        private string SlotPath(string slotName) =>
+            Path.Combine(SaveDir, SanitiseName(slotName) + ".json");
+
+        private static string SanitiseName(string name)
+        {
+            foreach (char c in Path.GetInvalidFileNameChars())
+                name = name.Replace(c, '_');
+            return name.Trim().Length == 0 ? "save" : name.Trim();
+        }
+
+        // ── Unity lifecycle ───────────────────────────────────────────────────
+
+        private void OnApplicationQuit()
+        {
+            // Always write an AutoSave on exit
+            SaveToSlot("AutoSave");
+        }
 
         // ── Public API ────────────────────────────────────────────────────────
 
-        public void Save()
+        /// <summary>Save to the last-used named slot.</summary>
+        public void QuickSave() => SaveToSlot(LastUsedSlot);
+
+        /// <summary>Save to a named slot.</summary>
+        public void SaveToSlot(string slotName)
         {
             var gm = GameManager.Instance;
             if (gm?.Grid == null) return;
@@ -40,55 +73,95 @@ namespace MetroSim
             try
             {
                 Directory.CreateDirectory(SaveDir);
-
-                var dto = BuildDTO(gm);
+                string path = SlotPath(slotName);
+                var dto  = BuildDTO(gm);
                 string json = JsonUtility.ToJson(dto, prettyPrint: true);
-                File.WriteAllText(SavePath, json);
+                File.WriteAllText(path, json);
 
-                gm.Notify($"💾 City saved to {SaveFileName}");
-                Debug.Log($"[SaveLoad] Saved to {SavePath}");
+                LastUsedSlot = slotName;
+                if (slotName != "AutoSave")
+                    gm.Notify($"Saved \"{slotName}\"");
             }
             catch (Exception e)
             {
-                Debug.LogError($"[SaveLoad] Save failed: {e}");
-                gm.Notify("❌ Save failed – see console.");
+                Debug.LogError($"[SaveLoad] SaveToSlot({slotName}) failed: {e}");
+                GameManager.Instance?.Notify("Save failed – see console.");
             }
         }
 
-        public void Load()
+        /// <summary>Load from a named slot.</summary>
+        public void LoadFromSlot(string slotName)
         {
             var gm = GameManager.Instance;
             if (gm == null) return;
 
-            if (!File.Exists(SavePath))
+            string path = SlotPath(slotName);
+            if (!File.Exists(path))
             {
-                gm.Notify("❌ No save file found.");
+                gm.Notify($"No save found: \"{slotName}\"");
                 return;
             }
 
             try
             {
-                string json = File.ReadAllText(SavePath);
+                string json = File.ReadAllText(path);
                 var dto = JsonUtility.FromJson<CityDTO>(json);
                 ApplyDTO(dto, gm);
 
-                gm.Notify($"📂 City loaded from {SaveFileName}");
-                Debug.Log($"[SaveLoad] Loaded from {SavePath}");
+                LastUsedSlot = slotName;
+                gm.Notify($"Loaded \"{slotName}\"");
             }
             catch (Exception e)
             {
-                Debug.LogError($"[SaveLoad] Load failed: {e}");
-                gm.Notify("❌ Load failed – save may be corrupt.");
+                Debug.LogError($"[SaveLoad] LoadFromSlot({slotName}) failed: {e}");
+                GameManager.Instance?.Notify("Load failed – save may be corrupt.");
             }
         }
+
+        /// <summary>Returns all save files sorted by name.</summary>
+        public SaveInfo[] GetAllSaves()
+        {
+            if (!Directory.Exists(SaveDir)) return Array.Empty<SaveInfo>();
+
+            var files = Directory.GetFiles(SaveDir, "*.json");
+            var infos = new List<SaveInfo>(files.Length);
+            foreach (var f in files)
+            {
+                var info = new SaveInfo
+                {
+                    name        = Path.GetFileNameWithoutExtension(f),
+                    lastWrite   = File.GetLastWriteTime(f),
+                    displayDate = File.GetLastWriteTime(f).ToString("MM/dd/yy  HH:mm"),
+                };
+                infos.Add(info);
+            }
+            infos.Sort((a, b) => string.Compare(a.name, b.name, StringComparison.OrdinalIgnoreCase));
+            return infos.ToArray();
+        }
+
+        /// <summary>Delete a named save slot.</summary>
+        public void DeleteSlot(string slotName)
+        {
+            string path = SlotPath(slotName);
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+                GameManager.Instance?.Notify($"Deleted \"{slotName}\"");
+            }
+        }
+
+        // ── Legacy wrappers (keep existing call sites working) ────────────────
+
+        public void Save() => SaveToSlot(LastUsedSlot);
+        public void Load() => LoadFromSlot(LastUsedSlot);
 
         // ── DTO construction ──────────────────────────────────────────────────
 
         private CityDTO BuildDTO(GameManager gm)
         {
-            var map  = gm.Grid;
-            var eco  = gm.Economy;
-            var dto  = new CityDTO
+            var map = gm.Grid;
+            var eco = gm.Economy;
+            var dto = new CityDTO
             {
                 version     = 1,
                 cityName    = gm.CityName,
@@ -140,13 +213,11 @@ namespace MetroSim
 
         private void ApplyDTO(CityDTO dto, GameManager gm)
         {
-            // Validate
             if (dto.version != 1)
                 throw new Exception($"Unknown save version {dto.version}");
             if (dto.tiles == null || dto.tiles.Length != dto.mapWidth * dto.mapHeight)
                 throw new Exception("Tile array size mismatch.");
 
-            // Rebuild fresh grid at the same size
             gm.CityName = dto.cityName;
             gm.Year     = dto.year;
             gm.Month    = dto.month;
@@ -154,7 +225,6 @@ namespace MetroSim
             var map = new GridMap(dto.mapWidth, dto.mapHeight);
             gm.Grid = map;
 
-            // Apply tiles
             int idx = 0;
             for (int x = 0; x < dto.mapWidth; x++)
             for (int y = 0; y < dto.mapHeight; y++)
@@ -183,27 +253,19 @@ namespace MetroSim
                 t.IsFlooded    = d.isFlooded;
             }
 
-            // Economy
-            gm.Economy.Funds               = dto.funds;
-            gm.Economy.ResidentialTaxRate  = dto.resTax;
-            gm.Economy.CommercialTaxRate   = dto.comTax;
-            gm.Economy.IndustrialTaxRate   = dto.indTax;
+            gm.Economy.Funds              = dto.funds;
+            gm.Economy.ResidentialTaxRate = dto.resTax;
+            gm.Economy.CommercialTaxRate  = dto.comTax;
+            gm.Economy.IndustrialTaxRate  = dto.indTax;
 
-            // Theme
             gm.Themes?.SetTheme(dto.activeTheme);
-
-            // Reset subsystem state
             gm.Disasters?.Reset();
-
-            // Force full re-render
             gm.GridRend?.Rebuild(map);
             gm.OverlayRend?.SetDirty();
-
-            // Refresh UI
             gm.UI?.Refresh();
         }
 
-        // ── DTOs (must be [Serializable] for JsonUtility) ─────────────────────
+        // ── DTOs ──────────────────────────────────────────────────────────────
 
         [Serializable]
         private class CityDTO
