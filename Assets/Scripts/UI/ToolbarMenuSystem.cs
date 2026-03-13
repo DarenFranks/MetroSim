@@ -53,8 +53,8 @@ namespace MetroSim
             public readonly string key;     // null = separator
             public readonly bool   isOverlay;
             public readonly bool   isGame;
-            public MenuItem(string l, string k, bool ov = false, bool gm = false)
-            { label = l; key = k; isOverlay = ov; isGame = gm; }
+            public MenuItem(string l, string k, bool isOverlay = false, bool isGame = false)
+            { label = l; key = k; this.isOverlay = isOverlay; this.isGame = isGame; }
         }
 
         private (string cat, float width, MenuItem[] items)[] _menus;
